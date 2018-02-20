@@ -34,7 +34,7 @@ This time topic name can be anything after `chat:`. It can be `chat:watercooler`
 The dynamic channel names makes it even simple to have a dynamic topics and a user can subscribe to any topic they want.
 
 ## Pure WebSockets
-Adonis WebSocket uses pure WebSocket connection and never relies on pooling. All of the browsers have support for WebSockets and there is no point in adding fallback layers.
+Adonis WebSocket uses pure WebSocket connection and never relies on polling. All of the browsers have support for WebSockets and there is no point in adding fallback layers.
 
 By creating a pure WebSocket connection, we make it easier to scale apps horizontally, without relying on sticky sessions. Whereas with solutions like `socket.io` you need sticky sessions and it's even harder to use Node.js cluster module.
 
@@ -97,55 +97,26 @@ Here's the list of packet types and their codes.
 
 **Why numbers?** : Because it's less data to transfer.
 
-A simple example of using Packets to recognize the type of message. The following code is supposed to be executed on browser. 
+## Out of the box cluster support
+The server implementation of Adonis web socket supports Node.js cluster, without the need of any additional libraries.
 
-```js
-// assuming Adonis encoders library is pulled from CDN.
-
-const ws = new WebSocket('ws://localhost:3333')
-const subscriptions = new Map()
-
-function makeJoinPacket (topic) {
-  return { t: 1, d: { topic } } 
-}
-
-ws.onopen = function () {
- // storing we initiated for the subscription
- subscriptions.set('chat', false)
-
- const payload = msgpack.encode(makeJoinPacket('chat'))
- ws.send(payload)
-}
-
-ws.onmessage = function (payload) {
-  const packet = msgpack.decode(payload)
-
-  if (packet.t && packet.t === 3) {
-    // join acknowledgement from server
-  }
-
-  if (packet.t && packet.t === 4) {
-    // join error from server
-  }
-}
-```
+It makes use of the `process` to send messages to each other.
 
 ## Contracts
 By now as you know the messaging packets are used to build the channels and topics flow, below is the list of contracts **client and server** has to follow. 
 
 1. **client**: `JOIN` packet must have a topic.
 2. **server**: Server acknowledges the `JOIN` packet with `JOIN_ERROR` or `JOIN_ACK` packet. Both the packets will have the topic name in them.
-3. **server**: Ensure a single TCP connection can join a topic only for one time.
-4. **client**: Optionally can enforce a single topic subscription, since server will enforce it anyway.
-5. **client**: `EVENT` packet must have a topic inside the message body, otherwise packet will be dropped by the server.
-6. **server**: `EVENT` packet must have a topic inside the message body, otherwise packet will be dropped by the client too.
+3. **server**: Ensure a single TCP connection can join a given topic only for once.
+4. **client**: `EVENT` packet must have a topic inside the message body, otherwise packet will be dropped by the server.
+5. **server**: `EVENT` packet must have a topic inside the message body, otherwise packet will be dropped by the client too.
 
 The `LEAVE` flow works same as the `JOIN` flow.
 
 ## Ping/Pong
 Wish networks would have been reliable, but till then always be prepared for ungraceful disconnections.  Ping/Pong is a standard way for client to know that a server is alive and vice-versa.
 
-In order to distribute load, AdonisJs never pings clients to find if they are alive or not, instead clients are expected to ping the server after given interval.
+In order to distribute load, AdonisJs never pings clients to find if they are alive or not, instead clients are expected to ping the server after given interval. **This approach is borrowed from Phoenix ( Elixir framework )**.
 
 If a client fails to ping the server, their connection will be dropped after defined number of retries. Also for every `ping`, client will receive a `pong` from the server, which tells the client that the server is alive.
 
@@ -161,14 +132,66 @@ AdonisJs supports standard [ping/pong frames](https://tools.ietf.org/html/rfc645
     serverInterval: 30000,
     serverAttempts: 3,
     clientInterval: 25000,
-    clientAttempts: 3,
-    connId: 'connection unique id'
+    connId: 'connection unique id',
+    encoder: 'msgpack'
   }
 }
 ```
 
-All of the times are in milliseconds and `clientAttempts` is the number of attempts to be made by the client before declaring server as dead and same is true for server using the `serverAttempts` property.
+1. All of the times are in milliseconds.
+2. The `serverInterval` is the timer created on server to check the last ping time for a connection.
+3. The `serverAttempts` is the number of attempts, server will perform before terminating client.
+4. The `clientInterval` is timer client should set to ping the server. It will be always will be lower than the `serverInterval`.
+5. The `connId` is the connection id on the server.
+6. The `encoder` used by the server. Client has to use the same encoder to decode messages properly.
 
 ## Browser Support
 WebSockets are supported on all major browsers, so there is no point of adding weird fallbacks.
 https://caniuse.com/#feat=websockets
+
+## Libraries
+
+1. [@adonisjs/websocket-packets](http://npm.im/@adonisjs/websocket-packets) Library to **create** and **verify** packets.
+2. [msgpack-lite](https://www.npmjs.com/package/msgpack-lite) The encoder used to encode/decode messages. The output of this library is smaller than `JSON.stringify` (which means less data to transfer)
+3. [simple-filereader](http://npm.im/simple-filereader) Library for converting blob to string.
+4. [@adonisjs/websocket-client](http://npm.im/@adonisjs/websocket-client) A generic library to read the web socket messages on the browser and decode packages properly. You can make use of this library to build framework specific implementations.
+
+
+## Example
+
+Below is a basic example of how to implement a client in Javascript
+
+```js
+const filereader = require('simple-filereader')
+const msgpack = require('msgpack-lite')
+const packets = require('@adonisjs/websocket-packets')
+
+const client = new window.WebSocket('ws://localhost:3000/adonis-ws')
+
+client.onopen = function () {
+  // TCP connection created
+}
+
+client.onerror = function () {
+  // TCP connection error
+}
+
+client.onmessage = function (message) {
+  filereader(message, function (error, payload) {
+    const packet = msgpack.decode(payload)
+    handlePacket(packet)
+  })
+}
+
+function handlePacket (packet) {
+  if (packets.isOpenPacket(packet)) {
+    console.log('Server ack connection. Make channel subscriptions now')
+  }
+  
+  if (packets.isJoinAck(packet)) {
+    console.log('subscription created for %s', packet.d.topic)
+  }
+}
+```
+
+Above is the bare-bones example, the libraries for each platform will offer better abstractions.
