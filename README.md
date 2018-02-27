@@ -151,9 +151,9 @@ https://caniuse.com/#feat=websockets
 
 ## Libraries
 
-1. [@adonisjs/websocket-packets](http://npm.im/@adonisjs/websocket-packets) Library to **create** and **verify** packets.
-2. [msgpack-lite](https://www.npmjs.com/package/msgpack-lite) The encoder used to encode/decode messages. The output of this library is smaller than `JSON.stringify` (which means less data to transfer)
-3. [simple-filereader](http://npm.im/simple-filereader) Library for converting blob to string.
+1. [@adonisjs/websocket-packet](http://npm.im/@adonisjs/websocket-packet) Library to **create** and **verify** packets.
+2. [@adonisjs/msgpack-encoder](https://www.npmjs.com/package/@adonisjs/msgpack-encoder) The encoder based upon [msgpack](https://msgpack.org/index.html) used to encode/decode messages. The output of this library is smaller than `JSON.stringify` (which means less data to transfer)
+3. [simple-message-reader](http://npm.im/simple-message-reader) Library for converting `Blob` and `Array buffer` to string.
 4. [@adonisjs/websocket-client](http://npm.im/@adonisjs/websocket-client) A generic library to read the web socket messages on the browser and decode packages properly. You can make use of this library to build framework specific implementations.
 
 
